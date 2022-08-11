@@ -2,9 +2,9 @@ use crate::{
     KeyExchangeCompleted, SecureChannelDecryptor, SecureChannelKeyExchanger, SecureChannelListener,
     SecureChannelNewKeyExchanger, SecureChannelVault,
 };
-use ockam_core::compat::{rand::random, vec::Vec};
-use ockam_core::{Address, Result, Route};
-use ockam_node::Context;
+use ockam_core::compat::{sync::Arc, vec::Vec};
+use ockam_core::{Address, Mailbox, Mailboxes, Result, Route};
+use ockam_node::{Context, WorkerBuilder};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -97,27 +97,69 @@ impl SecureChannel {
         key_exchanger: impl SecureChannelKeyExchanger,
         vault: impl SecureChannelVault,
     ) -> Result<SecureChannelInfo> {
-        let address_remote: Address = random();
-
-        debug!(
-            "Starting SecureChannel initiator at remote: {}",
-            &address_remote
-        );
-
         let route = route.into();
 
-        let callback_address: Address = random();
+        // TODO @ac - does have random() have different entropy to random_local?
+        // let callback_address: Address = random();
+        let callback_address =
+            Address::random_tagged("SecureChannel.initiator.callback_address.detached");
+
+        //let mut child_ctx = ctx.new_detached(callback_address.clone()).await?;
+
+        // TODO @ac 0#SecureChannel.initiator.callback_address.detached
+        // in:
+        // out:
+        let mailboxes = Mailboxes::new(
+            Mailbox::new(
+                callback_address.clone(),
+                Arc::new(ockam_core::ToDoAccessControl),
+                Arc::new(ockam_core::ToDoAccessControl),
+            ),
+            vec![],
+        );
+        let mut child_ctx = ctx.new_detached_with_mailboxes(mailboxes).await?;
+
         let decryptor = SecureChannelDecryptor::new_initiator(
             key_exchanger,
-            Some(callback_address.clone()),
+            Some(callback_address),
             route,
             custom_payload,
             vault.async_try_clone().await?,
         )
         .await?;
 
-        let mut child_ctx = ctx.new_detached(callback_address).await?;
-        ctx.start_worker(address_remote.clone(), decryptor).await?;
+        // TODO @ac - does have random() have different entropy to random_local?
+        // let address_remote: Address = random();
+        let address_remote = Address::random_tagged("SecureChannel.initiator");
+
+        debug!(
+            "Starting SecureChannel initiator at remote: {}",
+            &address_remote
+        );
+
+        // ctx.start_worker(address_remote.clone(), decryptor).await?;
+
+        // TODO @ac
+        // const TCP: ockam_core::TransportType = ockam_core::TransportType::new(1);
+
+        // TODO @ac 0#SecureChannel.initiator
+        // in:
+        // out:
+        let mailbox = Mailbox::new(
+            address_remote,
+            // TODO @ac need a way to specify AC for incoming from client API because we
+            //          don't know if this is coming in over Transport or LocalOrigin or...
+            // Arc::new(ockam_core::AnyAccessControl::new(
+            //     ockam_node::access_control::AllowTransport::single(TCP),
+            //     LocalOriginOnly, // TODO @ac ???
+            // )),
+            // Arc::new(LocalOriginOnly), // TODO @ac ???
+            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac ???
+            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac ???
+        );
+        WorkerBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), decryptor)
+            .start(ctx)
+            .await?;
 
         let resp = child_ctx
             .receive_timeout::<KeyExchangeCompleted>(120)
