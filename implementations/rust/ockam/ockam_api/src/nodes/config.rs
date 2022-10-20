@@ -29,6 +29,8 @@ impl NodeConfig {
 pub struct NodeStateConfig {
     /// Lmdb file location
     pub authenticated_storage_path: Option<PathBuf>,
+    /// Lmdb file location
+    pub policies_storage_path: Option<PathBuf>,
     /// Vault info
     pub vault_path: Option<PathBuf>,
     /// Exported identity value
