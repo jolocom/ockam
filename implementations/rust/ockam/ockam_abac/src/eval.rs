@@ -1,145 +1,193 @@
 use crate::env::Env;
 use crate::error::EvalError;
 use crate::expr::{unit, Expr};
-use ockam_core::compat::format;
 use ockam_core::compat::string::ToString;
 
 #[rustfmt::skip]
 pub fn eval(expr: &Expr, env: &Env) -> Result<Expr, EvalError> {
-    match expr {
-        Expr::Ident(id) => env.get(id).cloned(),
-        Expr::List(es)  => match &es[..] {
-            []                    => Ok(unit()),
-            [Expr::Ident(id), ..] => {
-                match id.as_str() {
-                    "and"     => eval_and(&es[1..], env),
-                    "or"      => eval_or(&es[1..], env),
-                    "not"     => eval_not(&es[1..], env),
-                    "if"      => eval_if(&es[1..], env),
-                    "<"       => eval_pred(&es[1..], env, "<",  |a, b| a < b),
-                    ">"       => eval_pred(&es[1..], env, ">",  |a, b| a > b),
-                    "="       => eval_eq(&es[1..], env),
-                    "!="      => eval_ne(&es[1..], env),
-                    "member?" => eval_in(&es[1..], env),
-                    "exists?" => eval_exists(&es[1..], env),
-                    _         => Err(EvalError::Unknown(id.to_string()))
+
+    #[derive(Debug)]
+    enum Op<'a> {
+        Eval(&'a Expr),
+        And(usize),
+        Or(usize),
+        Not,
+        If,
+        Eq(usize),
+        Gt(usize),
+        Lt(usize),
+        Member,
+        Seq(usize),
+    }
+
+    let mut ctrl = Vec::new();
+    let mut args = Vec::new();
+    ctrl.push(Op::Eval(expr));
+
+    while let Some(x) = ctrl.pop() {
+        match x {
+            Op::Eval(Expr::Ident(id)) => ctrl.push(Op::Eval(env.get(id)?)),
+            Op::Eval(Expr::List(es))  => match &es[..] {
+                []                    => args.push(unit()),
+                [Expr::Ident(id), ..] => {
+                    match id.as_str() {
+                        "and" => ctrl.push(Op::And(es.len() - 1)),
+                        "or"  => ctrl.push(Op::Or(es.len() - 1)),
+                        "not" => ctrl.push(Op::Not),
+                        "if"  => ctrl.push(Op::If),
+                        "<"   => ctrl.push(Op::Lt(es.len() - 1)),
+                        ">"   => ctrl.push(Op::Gt(es.len() - 1)),
+                        "="   => ctrl.push(Op::Eq(es.len() - 1)),
+                        "!="  => {
+                            ctrl.push(Op::Not);
+                            ctrl.push(Op::Eq(es.len() - 1))
+                        }
+                        "member?" => ctrl.push(Op::Member),
+                        "exists?" => {
+                            let mut b = true;
+                            for e in &es[1..] {
+                                match e {
+                                    Expr::Ident(id) => if !env.contains(id) {
+                                        b = false;
+                                        break
+                                    }
+                                    other => {
+                                        let msg = "'exists?' expects identifiers";
+                                        return Err(EvalError::InvalidType(other.clone(), msg))
+                                    }
+                                }
+                            }
+                            args.push(Expr::Bool(b));
+                            continue
+                        }
+                        _  => return Err(EvalError::Unknown(id.to_string()))
+                    }
+                    for e in es[1..].iter().rev() {
+                        ctrl.push(Op::Eval(e))
+                    }
+                }
+                [other, ..] => {
+                    let msg = "expected (op ...)";
+                    return Err(EvalError::InvalidType(other.clone(), msg))
                 }
             }
-            [other, ..] => Err(EvalError::InvalidType(other.clone(), "expected (op ...)"))
-        }
-        Expr::Seq(es) => {
-            let xs = es.iter().map(|e| eval(e, env)).collect::<Result<_, _>>()?;
-            Ok(Expr::Seq(xs))
-        }
-        expr => Ok(expr.clone())
-    }
-}
-
-fn eval_and(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    for e in expr {
-        match eval(e, env)? {
-            Expr::Bool(true) => continue,
-            Expr::Bool(false) => return Ok(Expr::Bool(false)),
-            other => return Err(EvalError::InvalidType(other, "expected bool")),
-        }
-    }
-    Ok(Expr::Bool(true))
-}
-
-fn eval_or(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    for e in expr {
-        match eval(e, env)? {
-            Expr::Bool(true) => return Ok(Expr::Bool(true)),
-            Expr::Bool(false) => continue,
-            other => return Err(EvalError::InvalidType(other, "expected bool")),
-        }
-    }
-    Ok(Expr::Bool(false))
-}
-
-fn eval_if(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    match expr {
-        [test, t, f] => match eval(test, env)? {
-            Expr::Bool(true) => eval(t, env),
-            Expr::Bool(false) => eval(f, env),
-            other => Err(EvalError::InvalidType(other, "expected bool")),
-        },
-        _ => Err(EvalError::malformed(
-            "expected (if <test> <consequent> <alternative>)",
-        )),
-    }
-}
-
-fn eval_not(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    if expr.is_empty() {
-        return Err(EvalError::malformed("not requires an argument"));
-    }
-    match eval(&expr[0], env)? {
-        Expr::Bool(b) => Ok(Expr::Bool(!b)),
-        other => Err(EvalError::InvalidType(other, "expected bool")),
-    }
-}
-
-fn eval_eq(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    if let Some(a) = expr.first() {
-        let x = eval(a, env)?;
-        for e in expr.iter().skip(1) {
-            let y = eval(e, env)?;
-            if x != y {
-                return Ok(Expr::Bool(false));
-            }
-        }
-    }
-    Ok(Expr::Bool(true))
-}
-
-fn eval_ne(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    match eval_eq(expr, env)? {
-        Expr::Bool(b) => Ok(Expr::Bool(!b)),
-        other => Err(EvalError::InvalidType(other, "expected bool")),
-    }
-}
-
-fn eval_in(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    if expr.len() != 2 {
-        return Err(EvalError::malformed("in requires two arguments"));
-    }
-    let a = eval(&expr[0], env)?;
-    match eval(&expr[1], env)? {
-        Expr::Seq(vs) => Ok(Expr::Bool(vs.contains(&a))),
-        other => Err(EvalError::InvalidType(other, "expected sequence")),
-    }
-}
-
-fn eval_exists(expr: &[Expr], env: &Env) -> Result<Expr, EvalError> {
-    for e in expr {
-        match e {
-            Expr::Ident(id) => {
-                if !env.contains(id) {
-                    return Ok(Expr::Bool(false));
+            Op::Eval(Expr::Seq(es)) => {
+                ctrl.push(Op::Seq(es.len()));
+                for e in es.iter().rev() {
+                    ctrl.push(Op::Eval(e))
                 }
             }
-            other => return Err(EvalError::InvalidType(other.clone(), "expected identifier")),
+            Op::Eval(expr) => args.push(expr.clone()),
+            Op::And(n) => {
+                let mut b = true;
+                for e in args.drain(args.len() - n ..) {
+                    match e {
+                        Expr::Bool(true)  => continue,
+                        Expr::Bool(false) => { b = false; break }
+                        other             => return Err(EvalError::InvalidType(other, "'and' expected bool"))
+                    }
+                }
+                args.push(Expr::Bool(b))
+            }
+            Op::Or(n) => {
+                let mut b = false ;
+                for e in args.drain(args.len() - n ..) {
+                    match e {
+                        Expr::Bool(true)  => { b = true; break }
+                        Expr::Bool(false) => continue,
+                        other             => return Err(EvalError::InvalidType(other, "'or' expected bool"))
+                    }
+                }
+                args.push(Expr::Bool(b))
+            }
+            Op::Not => {
+                match args.pop() {
+                    Some(Expr::Bool(b)) => args.push(Expr::Bool(!b)),
+                    Some(other)         => return Err(EvalError::InvalidType(other, "'not' expected bool")),
+                    None                => return Err(EvalError::malformed("'not' requires exactly one argument"))
+                }
+            }
+            Op::If => {
+                if args.len() < 3 {
+                    return Err(EvalError::malformed("'if' requires three arguments"))
+                }
+                let f = args.pop().expect("args.len() >= 3");
+                let t = args.pop().expect("args.len() >= 2");
+                let x = args.pop().expect("args.len() >= 1");
+                match x {
+                    Expr::Bool(true)  => args.push(t),
+                    Expr::Bool(false) => args.push(f),
+                    other             => return Err(EvalError::InvalidType(other, "'if' expected bool"))
+                }
+            }
+            Op::Eq(n) => {
+                if args.len() < 2 {
+                    return Err(EvalError::malformed("'=' requires at least two arguments"))
+                }
+                let mut b = true;
+                let x = &args[args.len() - n];
+                for y in &args[args.len() - (n - 1) ..] {
+                    if x != y {
+                        b = false;
+                        break
+                    }
+                }
+                args.truncate(args.len() - n);
+                args.push(Expr::Bool(b))
+            }
+            Op::Lt(n) => {
+                if args.len() < 2 {
+                    return Err(EvalError::malformed("'<' requires at least two arguments"))
+                }
+                let mut b = true;
+                let mut x = &args[args.len() - n];
+                for y in &args[args.len() - (n - 1) ..] {
+                    if x >= y {
+                        b = false;
+                        break
+                    }
+                    x = y
+                }
+                args.truncate(args.len() - n);
+                args.push(Expr::Bool(b))
+            }
+            Op::Gt(n) => {
+                if args.len() < 2 {
+                    return Err(EvalError::malformed("'>' requires at least two arguments"))
+                }
+                let mut b = true;
+                let mut x = &args[args.len() - n];
+                for y in &args[args.len() - (n - 1) ..] {
+                    if x <= y {
+                        b = false;
+                        break
+                    }
+                    x = y
+                }
+                args.truncate(args.len() - n);
+                args.push(Expr::Bool(b))
+            }
+            Op::Member => {
+                if args.len() < 2 {
+                    return Err(EvalError::malformed("'member?' requires two arguments"))
+                }
+                let s = args.pop().expect("args.len() >= 2");
+                let x = args.pop().expect("args.len() >= 1");
+                match s {
+                    Expr::Seq(xs) => args.push(Expr::Bool(xs.contains(&x))),
+                    other => {
+                        let msg = "'member?' expects sequence as second argument";
+                        return Err(EvalError::InvalidType(other, msg))
+                    }
+                }
+            }
+            Op::Seq(n) => {
+                let s = args.split_off(args.len() - n);
+                args.push(Expr::Seq(s))
+            }
         }
     }
-    Ok(Expr::Bool(true))
-}
 
-fn eval_pred<F>(expr: &[Expr], env: &Env, op: &str, pred: F) -> Result<Expr, EvalError>
-where
-    F: Fn(&Expr, &Expr) -> bool,
-{
-    if expr.len() < 2 {
-        let msg = format!("{op} requires at leat two arguments");
-        return Err(EvalError::malformed(msg));
-    }
-    let mut last = eval(&expr[0], env)?;
-    for x in &expr[1..] {
-        let y = eval(x, env)?;
-        if !pred(&last, &y) {
-            return Ok(Expr::Bool(false));
-        }
-        last = y
-    }
-    Ok(Expr::Bool(true))
+    debug_assert_eq!(1, args.len());
+    Ok(args.pop().unwrap())
 }

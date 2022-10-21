@@ -194,51 +194,68 @@ where
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Expr::Str(s) => write!(f, "{s:?}"),
-            Expr::Int(i) => write!(f, "{i}"),
-            Expr::Float(x) => {
-                if x.is_nan() {
-                    f.write_str("nan")
-                } else if x.is_infinite() {
-                    if x.is_sign_negative() {
-                        f.write_str("-inf")
+        // Control stack element
+        #[rustfmt::skip]
+        enum E<'a> {
+            X(&'a Expr), // expression
+            L,           // end of list
+            S,           // end of sequence
+            W,           // whitespace
+        }
+
+        let mut stack = Vec::new();
+        stack.push(E::X(self));
+
+        while let Some(e) = stack.pop() {
+            match e {
+                E::X(Expr::Str(s)) => write!(f, "{s:?}")?,
+                E::X(Expr::Int(i)) => write!(f, "{i}")?,
+                E::X(Expr::Float(x)) => {
+                    if x.is_nan() {
+                        f.write_str("nan")?
+                    } else if x.is_infinite() {
+                        if x.is_sign_negative() {
+                            f.write_str("-inf")?
+                        } else {
+                            f.write_str("+inf")?
+                        }
                     } else {
-                        f.write_str("+inf")
+                        write!(f, "{:?}", x)?
                     }
-                } else {
-                    write!(f, "{:?}", x)
                 }
-            }
-            Expr::Bool(b) => write!(f, "{b}"),
-            Expr::Ident(v) => f.write_str(v),
-            Expr::List(es) => {
-                f.write_str("(")?;
-                let mut n = es.len();
-                for e in es {
-                    if n > 1 {
-                        write!(f, "{e} ")?
-                    } else {
-                        write!(f, "{e}")?
+                E::X(Expr::Bool(b)) => write!(f, "{b}")?,
+                E::X(Expr::Ident(v)) => f.write_str(v)?,
+                E::X(Expr::List(es)) => {
+                    stack.push(E::L);
+                    f.write_str("(")?;
+                    let mut n = es.len();
+                    for e in es.iter().rev() {
+                        stack.push(E::X(e));
+                        if n > 1 {
+                            stack.push(E::W)
+                        }
+                        n -= 1
                     }
-                    n -= 1;
                 }
-                f.write_str(")")
-            }
-            Expr::Seq(es) => {
-                f.write_str("[")?;
-                let mut n = es.len();
-                for e in es {
-                    if n > 1 {
-                        write!(f, "{e} ")?
-                    } else {
-                        write!(f, "{e}")?
+                E::X(Expr::Seq(es)) => {
+                    stack.push(E::S);
+                    f.write_str("[")?;
+                    let mut n = es.len();
+                    for e in es.iter().rev() {
+                        stack.push(E::X(e));
+                        if n > 1 {
+                            stack.push(E::W)
+                        }
+                        n -= 1
                     }
-                    n -= 1;
                 }
-                f.write_str("]")
+                E::L => f.write_str(")")?,
+                E::S => f.write_str("]")?,
+                E::W => f.write_str(" ")?,
             }
         }
+
+        Ok(())
     }
 }
 
@@ -277,6 +294,7 @@ impl Arbitrary for Expr {
             use rand::distributions::{Alphanumeric, DistString};
             let mut s = Alphanumeric.sample_string(&mut rand::thread_rng(), 23);
             s.retain(|c| !['(', ')', '[', ']'].contains(&c));
+            s.insert(0, 'a');
             s
         }
         match g.choose(&[1, 2, 3, 4, 5, 6, 7]).unwrap() {
@@ -301,10 +319,10 @@ impl Arbitrary for Expr {
 #[cfg(test)]
 mod tests {
     use super::Expr;
-    use crate::parser::parse;
+    use crate::{eval, parser::parse, Env};
     use core::cmp::Ordering;
     use ockam_core::compat::string::ToString;
-    use quickcheck::{Gen, QuickCheck};
+    use quickcheck::{Arbitrary, Gen, QuickCheck};
 
     #[test]
     fn write_read() {
@@ -478,5 +496,105 @@ mod tests {
             .tests(1000)
             .min_tests_passed(1000)
             .quickcheck(property as fn(_, _))
+    }
+
+    const EVIL: &str = r#"
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+         "#;
+
+    #[test]
+    fn evil() {
+        let x = parse(EVIL).unwrap().unwrap();
+        eval(&x, &Env::new()).unwrap();
+        let y = x.to_string();
+        let z = parse(&y).unwrap().unwrap();
+        assert_eq!(x, z)
+    }
+
+    #[derive(Debug, Clone)]
+    struct S(String);
+
+    impl Arbitrary for S {
+        fn arbitrary(g: &mut Gen) -> Self {
+            const ALPHABET: &[char] = &[
+                ' ', ')', '(', '[', ']', '"', 'a', 'b', 'c', '1', '2', '3', '.',
+            ];
+            let mut s = String::new();
+            for _ in 0u8..u8::arbitrary(g) {
+                s.push(*g.choose(ALPHABET).unwrap())
+            }
+            s.push('#'); // guarantee parse error
+            S(s)
+        }
+    }
+
+    #[test]
+    fn malformed() {
+        fn property(s: S) {
+            assert!(parse(&s.0).is_err())
+        }
+        QuickCheck::new()
+            .tests(1000)
+            .min_tests_passed(1000)
+            .quickcheck(property as fn(_))
     }
 }
