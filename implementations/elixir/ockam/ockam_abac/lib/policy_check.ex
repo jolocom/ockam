@@ -18,7 +18,7 @@ defmodule Ockam.ABAC.PolicyCheck do
   def match_policies(%Request{} = request, policies) when is_list(policies) do
     case Enum.any?(policies, fn policy -> Policy.match_policy?(policy, request) end) do
       true -> :ok
-      false -> {:error, {:abac_policy_mismatch, policies}}
+      false -> {:error, {:abac_policy_mismatch, policies, request}}
     end
   end
 
