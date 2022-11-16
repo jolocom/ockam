@@ -2,7 +2,10 @@
 
 use ockam::{route, Context, Result, TcpTransport, TCP};
 
-#[ockam::node]
+#[ockam::node(
+    incoming = "ockam::access_control::AllowAll",
+    outgoing = "ockam::access_control::LocalDestinationOnly"
+)]
 async fn main(mut ctx: Context) -> Result<()> {
     // Initialize the TCP Transport.
     let _tcp = TcpTransport::create(&ctx).await?;

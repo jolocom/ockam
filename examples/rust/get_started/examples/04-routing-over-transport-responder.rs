@@ -2,9 +2,14 @@
 // It then runs forever waiting for messages.
 
 use hello_ockam::Echoer;
-use ockam::{Context, Result, TcpTransport};
+use ockam::access_control::AllowAll;
+use ockam::{Context, Mailboxes, Result, TcpTransport, WorkerBuilder};
+use std::sync::Arc;
 
-#[ockam::node]
+#[ockam::node(
+    incoming = "ockam::access_control::LocalOriginOnly",
+    outgoing = "ockam::access_control::LocalDestinationOnly"
+)]
 async fn main(ctx: Context) -> Result<()> {
     // Initialize the TCP Transport.
     let tcp = TcpTransport::create(&ctx).await?;
@@ -15,7 +20,13 @@ async fn main(ctx: Context) -> Result<()> {
     tcp.listen(format!("127.0.0.1:{port}")).await?;
 
     // Create an echoer worker
-    ctx.start_worker("echoer", Echoer).await?;
+    WorkerBuilder::with_mailboxes(
+        Mailboxes::main("echoer", Arc::new(AllowAll), Arc::new(AllowAll)),
+        Echoer,
+    )
+    .start(&ctx)
+    .await?;
+    // ctx.start_worker("echoer", Echoer).await?;
 
     // Don't call ctx.stop() here so this node runs forever.
     Ok(())

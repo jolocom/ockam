@@ -104,8 +104,8 @@ impl SecureChannel {
         let mailboxes = Mailboxes::new(
             Mailbox::new(
                 callback_address.clone(),
-                Arc::new(ockam_core::ToDoAccessControl), // TODO: @ac Allow only from the Decryptor
-                Arc::new(ockam_core::ToDoAccessControl), // TODO: @ac Allow only to the Decryptor
+                Arc::new(ockam_core::DenyAll), // TODO: @ac Allow only from the Decryptor
+                Arc::new(ockam_core::DenyAll), // TODO: @ac Allow only to the Decryptor
             ),
             vec![],
         );
@@ -129,8 +129,8 @@ impl SecureChannel {
 
         let mailbox = Mailbox::new(
             address_remote,
-            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac Any
-            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac Any
+            Arc::new(ockam_core::DenyAll), // TODO @ac Any
+            Arc::new(ockam_core::DenyAll), // TODO @ac Any
         );
         WorkerBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), decryptor)
             .start(ctx)

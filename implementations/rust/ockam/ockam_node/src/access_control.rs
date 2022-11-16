@@ -20,6 +20,17 @@ impl AccessControl for LocalOriginOnly {
     }
 }
 
+/// Allows only messages to local workers
+#[derive(Debug)]
+pub struct LocalDestinationOnly;
+
+#[async_trait]
+impl AccessControl for LocalDestinationOnly {
+    async fn is_authorized(&self, _relay_msg: &RelayMessage) -> Result<bool> {
+        Ok(true) // FIXME: @ac
+    }
+}
+
 /// Allows only messages coming from specified set of transport types. Also allows Local messages
 /// TODO allow specification of port as well
 pub struct AllowTransport {

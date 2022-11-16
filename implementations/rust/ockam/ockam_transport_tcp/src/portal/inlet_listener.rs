@@ -52,11 +52,7 @@ impl TcpInletListenProcessor {
         // TODO: @ac 0#TcpInletListenProcessor
         // in:  n/a
         // out: n/a
-        let mailbox = Mailbox::new(
-            waddr.clone(),
-            access_control,
-            Arc::new(ockam_core::AllowAll),
-        );
+        let mailbox = Mailbox::new(waddr.clone(), access_control, Arc::new(ockam_core::DenyAll));
         ProcessorBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), processor)
             .start(ctx)
             .await?;

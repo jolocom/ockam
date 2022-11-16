@@ -1,6 +1,6 @@
 use ockam_core::access_control::AccessControl;
 use ockam_core::compat::{boxed::Box, net::SocketAddr, sync::Arc};
-use ockam_core::{Address, AllowAll, AsyncTryClone, Result, Route};
+use ockam_core::{Address, AsyncTryClone, DenyAll, Result, Route};
 use ockam_node::Context;
 
 use crate::{parse_socket_addr, TcpOutletListenWorker, TcpRouter, TcpRouterHandle};
@@ -189,7 +189,7 @@ impl TcpTransport {
         bind_addr: impl Into<String>,
         outlet_route: impl Into<Route>,
     ) -> Result<(Address, SocketAddr)> {
-        let options = InletOptions::new(bind_addr.into(), outlet_route.into(), Arc::new(AllowAll));
+        let options = InletOptions::new(bind_addr.into(), outlet_route.into(), Arc::new(DenyAll));
 
         self.create_inlet_extended(options).await
     }
@@ -248,7 +248,7 @@ impl TcpTransport {
         address: impl Into<Address>,
         peer: impl Into<String>,
     ) -> Result<()> {
-        let options = OutletOptions::new(address.into(), peer.into(), Arc::new(AllowAll));
+        let options = OutletOptions::new(address.into(), peer.into(), Arc::new(DenyAll));
 
         self.create_outlet_extended(options).await
     }

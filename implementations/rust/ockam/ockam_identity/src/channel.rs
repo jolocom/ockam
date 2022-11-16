@@ -17,7 +17,7 @@ use crate::authenticated_storage::AuthenticatedStorage;
 use crate::{Identity, IdentityVault};
 use core::time::Duration;
 use ockam_core::compat::sync::Arc;
-use ockam_core::{Address, AllowAll, AsyncTryClone, Mailbox, Mailboxes, Result, Route};
+use ockam_core::{Address, AsyncTryClone, DenyAll, Mailbox, Mailboxes, Result, Route};
 
 impl<V: IdentityVault> Identity<V> {
     pub async fn create_secure_channel_listener(
@@ -33,8 +33,8 @@ impl<V: IdentityVault> Identity<V> {
         // TODO @ac
         let mailbox = Mailbox::new(
             address.into(),
-            Arc::new(AllowAll),
-            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac
+            Arc::new(DenyAll),
+            Arc::new(DenyAll), // TODO @ac
         );
         WorkerBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), listener)
             .start(&self.ctx)
@@ -98,7 +98,7 @@ mod test {
     use core::sync::atomic::{AtomicU8, Ordering};
     use core::time::Duration;
     use ockam_core::compat::sync::Arc;
-    use ockam_core::{route, AllowAll, Any, Result, Routed, Worker};
+    use ockam_core::{route, Any, Result, Routed, Worker};
     use ockam_node::{Context, WorkerBuilder};
     use ockam_vault::Vault;
     use tokio::time::sleep;
@@ -367,7 +367,7 @@ mod test {
         let access_control = IdentityAccessControlBuilder::new_with_id(alice.identifier().clone());
         WorkerBuilder::with_access_control(
             Arc::new(access_control),
-            Arc::new(AllowAll),
+            Arc::new(DenyAll), // TODO: @ac
             "receiver",
             receiver,
         )
@@ -412,7 +412,7 @@ mod test {
         let access_control = IdentityAccessControlBuilder::new_with_id(bob.identifier().clone());
         WorkerBuilder::with_access_control(
             Arc::new(access_control),
-            Arc::new(AllowAll),
+            Arc::new(DenyAll), // TODO: @ac
             "receiver",
             receiver,
         )
@@ -451,7 +451,7 @@ mod test {
         );
         WorkerBuilder::with_access_control(
             Arc::new(access_control),
-            Arc::new(AllowAll),
+            Arc::new(DenyAll), // TODO: @ac
             "receiver",
             receiver,
         )

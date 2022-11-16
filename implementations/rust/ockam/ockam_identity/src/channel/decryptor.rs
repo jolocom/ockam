@@ -13,7 +13,7 @@ use ockam_channel::{
 };
 use ockam_core::compat::{boxed::Box, sync::Arc, vec::Vec};
 use ockam_core::vault::Signature;
-use ockam_core::{async_trait, AllowAll, Mailbox, Mailboxes};
+use ockam_core::{async_trait, DenyAll, Mailbox, Mailboxes};
 use ockam_core::{
     route, Address, Any, Decodable, Encodable, LocalMessage, Message, Result, Route, Routed,
     TransportMessage, Worker,
@@ -95,11 +95,7 @@ impl<V: IdentityVault, S: AuthenticatedStorage> DecryptorWorker<V, S> {
         // in:
         // out:
         let mailboxes = Mailboxes::new(
-            Mailbox::new(
-                child_address.clone(),
-                Arc::new(ockam_core::ToDoAccessControl),
-                Arc::new(ockam_core::ToDoAccessControl),
-            ),
+            Mailbox::new(child_address.clone(), Arc::new(DenyAll), Arc::new(DenyAll)),
             vec![],
         );
         let mut child_ctx = ctx.new_detached_with_mailboxes(mailboxes).await?;
@@ -140,11 +136,7 @@ impl<V: IdentityVault, S: AuthenticatedStorage> DecryptorWorker<V, S> {
         // TODO @ac 0#DecryptorWorker_create_initiator
         // in:
         // out:
-        let mailbox = Mailbox::new(
-            self_address.clone(),
-            Arc::new(ockam_core::ToDoAccessControl),
-            Arc::new(ockam_core::ToDoAccessControl),
-        );
+        let mailbox = Mailbox::new(self_address.clone(), Arc::new(DenyAll), Arc::new(DenyAll));
         WorkerBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), worker)
             .start(ctx)
             .await?;
@@ -203,11 +195,11 @@ impl<V: IdentityVault, S: AuthenticatedStorage> DecryptorWorker<V, S> {
 
         // TODO: @ac
         let mailboxes = Mailboxes::new(
-            Mailbox::allow_all(self_address.clone()),
+            Mailbox::deny_all(self_address.clone()),
             vec![Mailbox::new(
                 kex_callback_address.clone(),
-                Arc::new(AllowAll), // TODO: @ac only kex
-                Arc::new(AllowAll), // TODO: @ac deny all
+                Arc::new(DenyAll), // TODO: @ac only kex
+                Arc::new(DenyAll), // TODO: @ac deny all
             )],
         );
         WorkerBuilder::with_mailboxes(mailboxes, worker)
@@ -234,8 +226,8 @@ impl<V: IdentityVault, S: AuthenticatedStorage> DecryptorWorker<V, S> {
         let mailboxes = Mailboxes::new(
             Mailbox::new(
                 regular_responder_address.clone(),
-                Arc::new(AllowAll), // TODO: @ac
-                Arc::new(AllowAll), // TODO: @ac only to our decryptor
+                Arc::new(DenyAll), // TODO: @ac
+                Arc::new(DenyAll), // TODO: @ac only to our decryptor
             ),
             vec![],
         );

@@ -82,8 +82,8 @@ impl<V: SecureChannelVault, N: SecureChannelNewKeyExchanger> Worker
 
         let mailbox = Mailbox::new(
             address_remote.clone(),
-            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac Any
-            Arc::new(ockam_core::ToDoAccessControl), // TODO @ac Any
+            Arc::new(ockam_core::DenyAll), // TODO @ac Any
+            Arc::new(ockam_core::DenyAll), // TODO @ac Any
         );
         WorkerBuilder::with_mailboxes(Mailboxes::new(mailbox, vec![]), decryptor)
             .start(ctx)

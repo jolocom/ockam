@@ -1,7 +1,7 @@
 use crate::{PortalInternalMessage, PortalMessage, TcpPortalRecvProcessor};
 use core::time::Duration;
 use ockam_core::compat::{boxed::Box, net::SocketAddr, sync::Arc};
-use ockam_core::{async_trait, AccessControl, AllowAll, Decodable, Mailbox, Mailboxes};
+use ockam_core::{async_trait, AccessControl, Decodable, DenyAll, Mailbox, Mailboxes};
 use ockam_core::{Address, Any, Result, Route, Routed, Worker};
 use ockam_node::{Context, ProcessorBuilder, WorkerBuilder};
 use ockam_transport_core::TransportError;
@@ -139,12 +139,12 @@ impl TcpPortalWorker {
         // out: n/a
         let internal_mailbox = Mailbox::new(
             worker.internal_address.clone(),
-            Arc::new(AllowAll),
+            Arc::new(DenyAll),
             /*ockam_core::AllowSourceAddress(
                 worker.receiver_address.clone(),
             )),
             */
-            Arc::new(AllowAll),
+            Arc::new(DenyAll),
         );
 
         // TODO: @ac 0#TcpPortalWorker_remote
@@ -153,7 +153,7 @@ impl TcpPortalWorker {
         let remote_mailbox = Mailbox::new(
             worker.remote_address.clone(),
             access_control,
-            Arc::new(AllowAll),
+            Arc::new(DenyAll),
             // FIXME: uncomment below:
             /*
             // TODO @ac need a way to specify AC for incoming from client API because we
@@ -206,8 +206,8 @@ impl TcpPortalWorker {
             // TODO processors can't receive messages, should they be incoming:DenyAll by default?
             let mailbox = Mailbox::new(
                 self.receiver_address.clone(),
-                Arc::new(AllowAll),
-                Arc::new(AllowAll),
+                Arc::new(DenyAll),
+                Arc::new(DenyAll),
                 /*
                 Arc::new(ockam_core::DenyAll),
                 Arc::new(ockam_core::AnyAccessControl::new(

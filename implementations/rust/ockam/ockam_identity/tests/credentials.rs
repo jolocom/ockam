@@ -1,5 +1,5 @@
 use ockam_core::compat::{boxed::Box, sync::Arc};
-use ockam_core::{async_trait, AllowAll, Any};
+use ockam_core::{async_trait, Any, DenyAll};
 use ockam_core::{route, Result, Routed, Worker};
 use ockam_identity::authenticated_storage::mem::InMemoryStorage;
 use ockam_identity::credential::access_control::CredentialAccessControl;
@@ -203,7 +203,7 @@ async fn access_control(ctx: &mut Context) -> Result<()> {
 
     WorkerBuilder::with_access_control(
         Arc::new(access_control),
-        Arc::new(AllowAll),
+        Arc::new(DenyAll), // TODO: @ac
         "counter",
         worker,
     )

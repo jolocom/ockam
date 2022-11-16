@@ -3,7 +3,10 @@
 use hello_ockam::Echoer;
 use ockam::{Context, Result};
 
-#[ockam::node]
+#[ockam::node(
+    incoming = "ockam::access_control::LocalOriginOnly",
+    outgoing = "ockam::access_control::LocalDestinationOnly"
+)]
 async fn main(mut ctx: Context) -> Result<()> {
     // Start a worker, of type Echoer, at address "echoer"
     ctx.start_worker("echoer", Echoer).await?;
