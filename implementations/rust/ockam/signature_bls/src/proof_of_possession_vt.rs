@@ -54,7 +54,7 @@ impl ProofOfPossessionVt {
 
     /// Create a new proof of possession
     pub fn new(sk: &SecretKey) -> Option<Self> {
-        if sk.0.is_zero() {
+        if sk.0.is_zero_vartime() {
             return None;
         }
         let pk = PublicKeyVt::from(sk);

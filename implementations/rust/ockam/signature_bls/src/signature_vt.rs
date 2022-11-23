@@ -56,7 +56,7 @@ impl SignatureVt {
 
     /// Create a new bls
     pub fn new<B: AsRef<[u8]>>(sk: &SecretKey, msg: B) -> Option<Self> {
-        if sk.0.is_zero() {
+        if sk.0.is_zero_vartime() {
             return None;
         }
         let a = Self::hash_msg(msg.as_ref());
