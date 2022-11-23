@@ -25,20 +25,20 @@ default = ["alloc"]
 alloc = []
 
 [dependencies]
-bls12_381_plus = { version = "0.5", default-features = false, features = [
+bls12_381_plus = { version = "0.7.0", default-features = false, features = [
     "alloc",
     "hashing",
     "pairings",
 ] }
-ff = { version = "0.10", default-features = false }
-group = "0.10"
+ff = { version = "0.12.0", default-features = false }
+group = "0.12.0"
 hkdf = { version = "0.11", default-features = false }
 pairing = "0.20"
 rand_core = "0.6"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sha2 = { version = "0.9", default-features = false }
 subtle = { version = "2.4", default-features = false }
-vsss-rs = { version = "1.0.0", default-features = false }
+vsss-rs = { version = "1.5.0", default-features = false }
 zeroize = { version = "1.4.2", features = ["zeroize_derive"] }
 
 [dev-dependencies]
